@@ -1,11 +1,10 @@
-name: Cloud PC + RustDesk + Opera GX (Visual Web ID Build)
+name: Cloud PC + RustDesk + Opera GX (Screenshot ID Capture)
 
 on:
   workflow_dispatch:
 
 permissions:
   contents: read
-  actions: write
 
 defaults:
   run:
@@ -88,7 +87,6 @@ jobs:
               Move-Item -Path "$userDesktop\Opera GX.lnk" -Destination $publicDesktop -Force -ErrorAction SilentlyContinue
           }
           
-          Write-Host "Configuring explicit launcher shortcut with forced promo link and sidebar flags..."
           $operaExe = "$env:ProgramFiles\Opera GX\opera.exe"
           if (-not (Test-Path $operaExe)) { $operaExe = "$env:ProgramFiles (x86)\Opera GX\opera.exe" }
           
@@ -98,48 +96,28 @@ jobs:
           $Shortcut.Arguments = "https://www.opera.com/gx/forsaken --no-first-run --enable-features=GXRewards,GXRewardsSidebarItem --with-feature:gx-rewards=1"
           $Shortcut.Save()
 
-      - name: Launch RustDesk (Foreground) + Single Shot Visual Upload
+      - name: Launch RustDesk GUI & Upload ID Screenshot
         run: |
           $rdExe = "C:\Program Files\RustDesk\rustdesk.exe"
-          Write-Host "Initializing visual user interface layers..."
+          Write-Host "Launching RustDesk interface to generate visual ID..."
           Start-Process -FilePath $rdExe -ErrorAction SilentlyContinue
           
-          $screenshotPath = "$env:TEMP\rustdesk_id.png"
-          $hasCaptured = $false
+          # Give RustDesk a 15-second grace period to connect to servers and display the ID on screen
+          Write-Host "Waiting for ID generation matrix to stabilize..."
+          Start-Sleep -Seconds 15
           
-          # Poll the desktop process array for the RustDesk window frame
-          for ($i = 1; $i -le 30; $i++) {
-              $proc = Get-Process -Name "rustdesk" -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne 0 }
-              
-              if ($proc -and -not $hasCaptured) {
-                  Write-Host "RustDesk window drawn on environment display. Snapping frame..."
-                  Start-Sleep -Seconds 4 # Grace period for texts/IDs to populate on desktop grid
-                  
-                  Add-Type -AssemblyName System.Windows.Forms, System.Drawing
-                  $bounds = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
-                  $bitmap = New-Object System.Drawing.Bitmap $bounds.Width, $bounds.Height
-                  $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
-                  $graphics.CopyFromScreen($bounds.Location, [System.Drawing.Point]::Empty, $bounds.Size)
-                  $bitmap.Save($screenshotPath, [System.Drawing.Imaging.ImageFormat]::Png)
-                  $graphics.Dispose(); $bitmap.Dispose()
-                  
-                  $hasCaptured = $true
-                  break
-              }
-              Start-Sleep -Seconds 1
-          }
+          $screenshotPath = "$env:TEMP\rustdesk_display.png"
           
-          if (-not $hasCaptured) {
-              Add-Type -AssemblyName System.Windows.Forms, System.Drawing
-              $bounds = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
-              $bitmap = New-Object System.Drawing.Bitmap $bounds.Width, $bounds.Height
-              $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
-              $graphics.CopyFromScreen($bounds.Location, [System.Drawing.Point]::Empty, $bounds.Size)
-              $bitmap.Save($screenshotPath, [System.Drawing.Imaging.ImageFormat]::Png)
-              $graphics.Dispose(); $bitmap.Dispose()
-          }
+          Write-Host "Snapping screen frame..."
+          Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+          $bounds = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+          $bitmap = New-Object System.Drawing.Bitmap $bounds.Width, $bounds.Height
+          $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
+          $graphics.CopyFromScreen($bounds.Location, [System.Drawing.Point]::Empty, $bounds.Size)
+          $bitmap.Save($screenshotPath, [System.Drawing.Imaging.ImageFormat]::Png)
+          $graphics.Dispose(); $bitmap.Dispose()
           
-          Write-Host "Uploading frame map to Telegraph open CDN infrastructure..."
+          Write-Host "Uploading frame map to Telegraph..."
           try {
               $upload = curl.exe -s -F "file=@$screenshotPath" https://telegra.ph/upload
               if ($upload -match '"src":"([^"]+)"') {

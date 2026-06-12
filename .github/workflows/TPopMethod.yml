@@ -1,4 +1,4 @@
-name: Cloud PC + Web Browser Link + Opera GX (CDN URL Fixed)
+name: Cloud PC + Web Browser Link + Opera GX (Official Fixed Release)
 
 on:
   workflow_dispatch:
@@ -77,15 +77,16 @@ jobs:
           Write-Host "Downloading Node web-bridge utilities..."
           npm install -g websockify --silent 2>$null
           
-          # Download noVNC standalone files
+          # Download noVNC standalone web interface
           New-Item -ItemType Directory -Path "C:\noVNC" -Force | Out-Null
           Invoke-WebRequest -Uri "https://github.com/novnc/noVNC/archive/refs/tags/v1.5.0.zip" -OutFile "novnc.zip"
           Expand-Archive -Path "novnc.zip" -DestinationPath "C:\noVNC" -Force
           Copy-Item -Path "C:\noVNC\noVNC-1.5.0\*" -Destination "C:\noVNC" -Recurse -Force
           
-          Write-Host "Downloading updated CDN web tunnel infrastructure..."
-          # Using standard continuous deployment binaries to bypass broken equinox pathways completely
-          Invoke-WebRequest -Uri "https://github.com/chmln/cloudflared-windows-binaries/raw/main/cloudflared-windows-amd64.exe" -OutFile "tunnel.exe"
+          Write-Host "Downloading Cloudflare binary from official production releases branch..."
+          # Uses the direct official Cloudflare production endpoint to guarantee zero download crashes
+          $cldUrl = "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe"
+          Invoke-WebRequest -Uri $cldUrl -OutFile "tunnel.exe" -UserAgent "Mozilla/5.0"
 
       - name: Start Web Services & Expose Link
         run: |
@@ -94,8 +95,8 @@ jobs:
           Start-Sleep -Seconds 3
           
           Write-Host "Creating Public High-Speed HTTP Web Proxy..."
-          # Launches the edge tunnel mapping local web port 8080 straight to a live link
           $LogFile = "$env:TEMP\tunnel.log"
+          # Initiates a free, secure, ephemeral Cloudflare Quick Tunnel link to the web port
           Start-Process .\tunnel.exe -ArgumentList "tunnel", "--url", "http://localhost:8080" -RedirectStandardError $LogFile
           Start-Sleep -Seconds 8
           

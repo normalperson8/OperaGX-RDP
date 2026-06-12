@@ -1,4 +1,4 @@
-name: Cloud PC + AnyDesk + Opera GX (Simplified Layout)
+name: Cloud PC + AnyDesk + Opera GX (Enhanced Logging Layout)
 
 on:
   workflow_dispatch:
@@ -25,6 +25,7 @@ jobs:
           $publicDesktop = [Environment]::GetFolderPath("CommonDesktopDirectory")
           $userDesktop = "$env:USERPROFILE\Desktop"
           
+          # Universal cleanup registry containing all elements to be cleared out from view
           $targets = @("Unity Hub.lnk", "R 4.6.0.lnk", "Firefox.lnk", "Google Chrome.lnk", "Claim Rewards Here.lnk")
           
           foreach ($target in $targets) {
@@ -68,7 +69,6 @@ jobs:
       - name: Optimize Resolution for Mobile Display
         run: |
           Write-Host "Adjusting display scale using native Server command..."
-          # Simplified: Using native Display Cmdlets to set 1280x720 instantly without raw C# code
           Set-DisplayResolution -Width 1280 -Height 720 -Force -ErrorAction SilentlyContinue
           Write-Host "Resolution updated to 1280x720!"
 
@@ -90,12 +90,18 @@ jobs:
           Start-Process -FilePath $installer -ArgumentList $args -Wait
           
           $publicDesktop = [Environment]::GetFolderPath("CommonDesktopDirectory")
-          $userDesktop = "$env:USERPROFILE\Desktop"
           
-          if (Test-Path "$userDesktop\Opera GX.lnk") {
-              Move-Item -Path "$userDesktop\Opera GX.lnk" -Destination $publicDesktop -Force -ErrorAction SilentlyContinue
-          }
-          Write-Host "Opera GX successfully configured with active feature flags!"
+          Write-Host "Modifying main Opera GX shortcut properties to force feature flags..."
+          $operaExe = "$env:ProgramFiles\Opera GX\opera.exe"
+          if (-not (Test-Path $operaExe)) { $operaExe = "$env:ProgramFiles (x86)\Opera GX\opera.exe" }
+          
+          # Rebuilds the target shortcut directly with the active backend engine flags attached to it
+          $WshShell = New-Object -ComObject WScript.Shell
+          $Shortcut = $WshShell.CreateShortcut("$publicDesktop\Opera GX Browser.lnk")
+          $Shortcut.TargetPath = $operaExe
+          $Shortcut.Arguments = "--enable-features=GXRewards"
+          $Shortcut.Save()
+          Write-Host "Opera GX modified with active engine flags!"
 
       - name: Fetch and Display AnyDesk Connection Address
         run: |
@@ -118,12 +124,19 @@ jobs:
               exit 1
           }
           
-          Write-Host "====================================================" -ForegroundColor Green
-          Write-Host "       ANYDESK CLOUD MACHINE IS READY TO CONNECT     " -ForegroundColor Green
-          Write-Host "====================================================" -ForegroundColor Green
-          Write-Host " CONNECTION ID : $cleanId" -ForegroundColor Yellow
-          Write-Host " PASSWORD      : ${{ env.ANYDESK_PASS }}" -ForegroundColor Yellow
-          Write-Host "====================================================" -ForegroundColor Green
+          # High-intensity console escape color formatting matrix
+          $ESC = [char]27
+          $Green = "$ESC[32m"
+          $Yellow = "$ESC[33m"
+          $Red = "$ESC[31m"
+          $Reset = "$ESC[0m"
+          
+          Write-Host "${Green}====================================================${Reset}"
+          Write-Host "${Green}       ANYDESK CLOUD MACHINE IS READY TO CONNECT     ${Reset}"
+          Write-Host "${Green}====================================================${Reset}"
+          Write-Host "${Yellow} CONNECTION ID : ${Red}${cleanId}${Reset}"
+          Write-Host "${Yellow} PASSWORD      : ${Red}${{ env.ANYDESK_PASS }}${Reset}"
+          Write-Host "${Green}====================================================${Reset}"
 
       - name: Keep alive
         run: |

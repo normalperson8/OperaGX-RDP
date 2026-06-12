@@ -1,4 +1,4 @@
-name: Cloud PC + RustDesk + Opera GX (Silent ID Capture)
+name: Cloud PC + RustDesk + Opera GX (Portable Service Deployment)
 
 on:
   workflow_dispatch:
@@ -31,20 +31,23 @@ jobs:
               if (Test-Path "$userDesktop\$target") { Remove-Item "$userDesktop\$target" -Force -ErrorAction SilentlyContinue }
           }
 
-      - name: Download and Force Install RustDesk Client
+      - name: Download and Force Install RustDesk Client (Portable Method)
         run: |
-          Write-Host "Fetching RustDesk Executable Layout from GitHub Mirror..."
+          Write-Host "Fetching RustDesk Executable Layout..."
           $url = "https://github.com/rustdesk/rustdesk/releases/download/1.3.1/rustdesk-1.3.1-x86_64.exe"
-          $dst = "$env:TEMP\RustDeskSetup.exe"
+          $targetDir = "C:\Program Files\RustDesk"
+          $rdExe = "$targetDir\rustdesk.exe"
+          
+          # Create directory manually to avoid installer prompt hangs
+          if (-not (Test-Path $targetDir)) { New-Item -ItemType Directory -Path $targetDir -Force }
           
           [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-          Invoke-WebRequest -Uri $url -OutFile $dst -UserAgent "Mozilla/5.0"
+          Invoke-WebRequest -Uri $url -OutFile $rdExe -UserAgent "Mozilla/5.0"
           
-          Write-Host "Executing silent compilation and physical system deployment..."
-          # Fix: Using --silent-install prevents the wizard GUI from freezing the runner
-          Start-Process $dst -ArgumentList "--silent-install" -Wait
+          Write-Host "Registering background system service directly..."
+          # Registering the service from the permanent path directly bypasses the installation wizard loop
+          Start-Process -FilePath $rdExe -ArgumentList "--install-service" -Wait
           Start-Sleep -Seconds 10
-          Remove-Item $dst -ErrorAction SilentlyContinue
 
       - name: Configure Unattended Security Password & Connection Profile
         run: |
@@ -106,7 +109,7 @@ jobs:
           $rdExe = "C:\Program Files\RustDesk\rustdesk.exe"
           $deviceId = "Not Found"
           
-          # Poll the hidden internal CLI helper to grab the generated ID directly
+          # Poll the internal CLI helper to grab the generated ID directly
           for ($i = 1; $i -le 15; $i++) {
               $idOutput = & $rdExe --get-id 2>$null
               if ($idOutput -match '(\d+)') {

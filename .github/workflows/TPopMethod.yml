@@ -39,6 +39,7 @@ jobs:
         run: |
           Invoke-WebRequest -Uri "https://net.geo.opera.com/opera_gx/stable/windows?utm_source=inf&utm_medium=gx" -OutFile "$env:TEMP\OperaGXSetup.exe"
           Start-Process -FilePath "$env:TEMP\OperaGXSetup.exe" -ArgumentList "--silent=1", "--allusers=1", "--launchbrowser=0" -Wait
+          Start-Sleep -Seconds 15
 
       - name: Install Python libs for Screen Capture & Automation
         run: |
@@ -73,12 +74,10 @@ jobs:
 
       - name: Launch RustDesk UI & Hide Agent Host Console
         run: |
-          # Fire up the main application window and keep it visible
           $rdExe = "C:\Program Files\RustDesk\rustdesk.exe"
           Start-Process -FilePath $rdExe -ErrorAction SilentlyContinue
-          Start-Sleep -Seconds 6
+          Start-Sleep -Seconds 8
           
-          # Use Win32 API to find and minimize the background Agent Host console window
           $memberDef = @'
           [DllImport("user32.dll")]
           public static extern bool ShowWindowAsync(IntPtr hWnd, int nCmdShow);
@@ -87,7 +86,6 @@ jobs:
           '@
           $win32 = Add-Type -MemberDefinition $memberDef -Name "Win32Util" -Namespace "Win32" -PassThru
           
-          # Fetch current console window handle and force minimize it (2 = SW_MINIMIZE)
           $consoleHandle = $win32::GetConsoleWindow()
           if ($consoleHandle -ne [IntPtr]::Zero) {
               $win32::ShowWindowAsync($consoleHandle, 2) | Out-Null
@@ -95,11 +93,12 @@ jobs:
           }
 
       - name: Run Opera GX Custom Automation Sequence
-        run: |
+        run: |-
           $PathsToCheck = @(
               "${env:ProgramFiles}\Opera GX\launcher.exe",
               "${env:ProgramFiles(x86)}\Opera GX\launcher.exe",
-              "${env:LOCALAPPDATA}\Programs\Opera GX\launcher.exe"
+              "${env:LOCALAPPDATA}\Programs\Opera GX\launcher.exe",
+              "C:\Program Files\Opera GX\launcher.exe"
           )
           
           $OperaPath = $null
@@ -110,9 +109,10 @@ jobs:
           if ($OperaPath) {
               Write-Host "Found Opera GX at: $OperaPath"
               Start-Process $OperaPath
-              Start-Sleep -Seconds 8
+              Start-Sleep -Seconds 10
               
-              python -c @"
+              # Save Python logic into a temporary local runtime script file to eliminate indentation bugs
+              $pyScript = @"
           import pyautogui
           import time
           
@@ -122,11 +122,15 @@ jobs:
           
           # Force launch the collab link setup
           pyautogui.hotkey('ctrl', 't')
+          time.sleep(1)
           pyautogui.write('https://www.opera.com/gx/is-forsaken')
           pyautogui.press('enter')
           "@
+              $pyScript | Out-File -FilePath "$env:TEMP\gx_automate.py" -Encoding utf8
+              python "$env:TEMP\gx_automate.py"
           } else {
-              Write-Warning "Could not dynamically trace the Opera GX binary launcher path."
+              Write-Error "Could not locate the Opera GX binary launcher path anywhere on disk."
+              exit 1
           }
 
       - name: Capture Live Credentials Layout & Upload to Gofile

@@ -1,12 +1,7 @@
-name: Cloud PC + Web View HTML5 Portal
+name: Cloud PC + Web Browser Link + Opera GX (Auto-Login Fix)
 
 on:
   workflow_dispatch:
-    inputs:
-      runtime_minutes:
-        description: "Runtime in minutes"
-        required: false
-        default: "355"
 
 permissions:
   contents: read
@@ -16,83 +11,100 @@ defaults:
     shell: pwsh
 
 jobs:
-  desktop:
+  rdp:
     runs-on: windows-latest
-    timeout-minutes: 370
+    timeout-minutes: 190
+    env:
+      VNC_PASS: Pass1234
+      RUNTIME_MINUTES: 180
+
     steps:
-      - name: Optimize System and Configure Network Firewall
+      - name: Force Password on Current User Account
         run: |
-          Set-NetFirewallProfile -Profile Public,Private,Domain -Enabled False
-          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0
-          Start-Service -Name "TermService" -ErrorAction SilentlyContinue
+          # Dynamically detect the current logged-in user
+          $currentUser = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name.Split('\')[1]
+          Write-Host "Detected current user: $currentUser"
+          
+          # Apply password to the detected user
+          $user = [ADSI]"WinNT://localhost/$currentUser,user"
+          $user.SetPassword("Pass1234")
+          Write-Host "✅ Password successfully set to Pass1234 for $currentUser"
 
-      - name: Deploy Native Web-Streaming Engine
+      - name: Wipe Unnecessary Pre-Installed GitHub Apps & Shortcuts
         run: |
-          Write-Host "Installing TightVNC Server via Chocolatey..."
-          choco install tightvnc -y --no-progress
-          
-          Write-Host "Injecting custom access keys directly into Registry..."
-          # Pre-configuring 'Pass1234' hex keys into the Windows registry so it skips interactive password setup
-          $regPath = "HKLM:\SOFTWARE\TightVNC\Server"
-          if (-not (Test-Path $regPath)) { New-Item -Path $regPath -Force | Out-Null }
-          
-          # Pass1234 obfuscated hex values for primary authentication
-          Set-ItemProperty -Path $regPath -Name "Password" -Value ([byte[]](0x2f,0x67,0x22,0x26,0x3e,0x28,0x2f,0x3c)) -PropertyType Binary -Force
-          Set-ItemProperty -Path $regPath -Name "ControlPassword" -Value ([byte[]](0x2f,0x67,0x22,0x26,0x3e,0x28,0x2f,0x3c)) -PropertyType Binary -Force
-          
-          # Force the internal web portal engine to turn on
-          Set-ItemProperty -Path $regPath -Name "HttpPort" -Value 5800 -PropertyType DWord -Force
-          Set-ItemProperty -Path $regPath -Name "EnableHttpServer" -Value 1 -PropertyType DWord -Force
-          Set-ItemProperty -Path $regPath -Name "RfbPort" -Value 5900 -PropertyType DWord -Force
+          $publicDesktop = [Environment]::GetFolderPath("CommonDesktopDirectory")
+          $targets = @("Unity Hub.lnk", "R 4.6.0.lnk", "Firefox.lnk", "Google Chrome.lnk", "Claim Rewards Here.lnk")
+          foreach ($target in $targets) { Remove-Item "$publicDesktop\$target" -Force -ErrorAction SilentlyContinue }
 
-          Write-Host "Booting native display server..."
-          $vncPath = "${env:ProgramFiles}\TightVNC\tvncserver.exe"
-          Start-Process -FilePath $vncPath -ArgumentList "-run" -NoNewWindow
-          Start-Sleep -Seconds 10
+      - name: Force Full HD Resolution
+        run: Set-DisplayResolution -Width 1920 -Height 1080 -Force
 
-      - name: Deploy Ngrok Public Web Tunnel
-        env:
-          NGROK_TOKEN: ${{ secrets.NGROK_AUTH_TOKEN }}
+      - name: Install and Configure TightVNC Server (Silent Registry Injection)
         run: |
-          Write-Host "Deploying proxy network infrastructure..."
-          choco install ngrok -y --no-progress
-          ngrok config add-authtoken $NGROK_TOKEN
+          Invoke-WebRequest -Uri "https://www.tightvnc.com/download/2.8.84/tightvnc-2.8.84-gpl-setup-64bit.msi" -OutFile "$env:TEMP\tightvnc.msi"
+          Start-Process msiexec.exe -ArgumentList "/i `"$env:TEMP\tightvnc.msi`" /quiet /qn SERVER_REGISTER_AS_SERVICE=1" -Wait
           
-          Write-Host "Spawning HTTP tunnel directly to Native Port 5800..."
-          # Exposes the built-in HTML5 viewer out to the web securely
-          Start-Process ngrok -ArgumentList "http 5800" -NoNewWindow
-          Start-Sleep -Seconds 10
+          Start-Sleep -Seconds 5
+          
+          $vncPath = "HKLM:\SOFTWARE\TightVNC\Server"
+          if (Test-Path $vncPath) {
+              Set-ItemProperty -Path $vncPath -Name "AuthRequired" -Value 1 -Type DWord
+              Set-ItemProperty -Path $vncPath -Name "AuthType" -Value 1 -Type DWord
+              Set-ItemProperty -Path $vncPath -Name "AllowLoopback" -Value 1 -Type DWord
+              Set-ItemProperty -Path $vncPath -Name "AcceptLocalConnections" -Value 1 -Type DWord
+              
+              [byte[]]$passHex = 0x21, 0x47, 0x66, 0x7A, 0x55, 0xAA, 0x6B, 0x39
+              Set-ItemProperty -Path $vncPath -Name "Password" -Value $passHex -Type Binary
+              Set-ItemProperty -Path $vncPath -Name "ControlPassword" -Value $passHex -Type Binary
+          }
+          
+          Restart-Service -Name "tvnserver" -Force
 
-      - name: Generate Direct Mobile Access Dashboard
+      - name: Download & Force Consumer Build of Opera GX
         run: |
-          $uri = "http://127.0.0.1:4040/api/tunnels"
-          for ($i = 1; $i -le 6; $i++) {
-              try {
-                  $tunnels = Invoke-RestMethod -Uri $uri
-                  $publicUrl = $tunnels.tunnels[0].public_url
-                  if ($publicUrl) {
-                      $Esc = [char]27
-                      Write-Host "`n${Esc}[36m###########################################################################${Esc}[0m"
-                      Write-Host "${Esc}[33m🚨 CLOUD WEB VIEW SYSTEM IS LIVE 🚨${Esc}[0m"
-                      Write-Host "${Esc}[36m###########################################################################${Esc}[0m"
-                      Write-Host "${Esc}[32m🌐 DIRECT MOBILE BROWSER LINK:${Esc}[0m"
-                      Write-Host "${Esc}[35m$publicUrl${Esc}[0m"
-                      Write-Host "${Esc}[36m###########################################################################${Esc}[0m"
-                      Write-Host "${Esc}[32m🔑 ACCESS PASSWORD: Pass1234${Esc}[0m"
-                      Write-Host "${Esc}[36m###########################################################################${Esc}[0m`n"
-                      break
-                  }
-              } catch {
-                  Write-Host "Waiting for web view network synchronization ($i/6)..."
-                  Start-Sleep -Seconds 5
-              }
+          Invoke-WebRequest -Uri "https://net.geo.opera.com/opera_gx/stable/windows?utm_source=inf&utm_medium=gx" -OutFile "$env:TEMP\OperaGXSetup.exe"
+          Start-Process -FilePath "$env:TEMP\OperaGXSetup.exe" -ArgumentList "--silent=1", "--allusers=1", "--launchbrowser=0" -Wait
+
+      - name: Deploy Web Interface & Dynamic Gateway Engines
+        run: |
+          python -m pip install websockify --quiet --no-input --disable-pip-version-check --no-color --progress-bar off
+          npm install -g localtunnel --silent --no-fund --no-audit --non-interactive
+          
+          New-Item -ItemType Directory -Path "C:\noVNC" -Force
+          Invoke-WebRequest -Uri "https://github.com/novnc/noVNC/archive/refs/tags/v1.5.0.zip" -OutFile "novnc.zip"
+          Expand-Archive -Path "novnc.zip" -DestinationPath "C:\noVNC" -Force
+          Copy-Item -Path "C:\noVNC\noVNC-1.5.0\*" -Destination "C:\noVNC" -Recurse -Force
+
+      - name: Start Services & Generate Auto-Login URLs
+        run: |
+          Write-Host "Launching Native Python Web Bridge..."
+          Start-Process python -ArgumentList "-m websockify 8080 localhost:5900 --web C:\noVNC"
+          
+          Write-Host "Verifying local backend initialization..."
+          $retries = 0
+          while (-not (Test-NetConnection -ComputerName 127.0.0.1 -Port 8080).TcpTestSucceeded -and $retries -lt 15) {
+              Start-Sleep -Seconds 2
+              $retries++
+          }
+          
+          Write-Host "Requesting isolated, non-clashing edge domain map..."
+          $LogFile = "$env:TEMP\localtunnel.log"
+          Start-Process cmd.exe -ArgumentList "/c lt --port 8080 > `"$LogFile`""
+          Start-Sleep -Seconds 7
+          
+          $RawLink = (Get-Content $LogFile -Raw) | Select-String -Pattern 'https://[a-zA-Z0-9-]+\.loca\.lt' | Select-Object -ExpandProperty Matches | Select-Object -ExpandProperty Value -First 1
+          
+          if ($RawLink) {
+              $FinalUrl = $RawLink + "/vnc.html?autoconnect=true&password=" + "${{ env.VNC_PASS }}"
+              Write-Host "===================================================="
+              Write-Host "     WEB-BROWSER CLOUD PC IS READY TO CONNECT      "
+              Write-Host "===================================================="
+              Write-Host " CLICK LINK: $FinalUrl"
+              Write-Host " SECURITY  : Credentials embedded. Automatic bypass active."
+              Write-Host "===================================================="
+          } else {
+              Write-Error "CRITICAL: Dynamic gateway assignment timed out."
           }
 
-      - name: Session Keep Alive Loop
-        run: |
-          $mins = [int]"${{ inputs.runtime_minutes }}"
-          $end = (Get-Date).AddMinutes($mins)
-          while ((Get-Date) -lt $end) {
-            Write-Host "Web View Portal Streaming | Heartbeat Live"
-            Start-Sleep -Seconds 60
-          }
+      - name: Keep alive
+        run: Start-Sleep -Seconds 10000

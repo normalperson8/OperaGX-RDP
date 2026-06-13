@@ -1,4 +1,4 @@
-name: Cloud PC via Release-Hosted AweSun Deployment (Execution Fix)
+name: Cloud PC via Release-Hosted AweSun (With GoFile ID Link)
 
 on:
   workflow_dispatch:
@@ -38,32 +38,69 @@ jobs:
           Invoke-WebRequest -Uri "${{ env.RELEASE_URL }}" -OutFile "awesun.zip"
           
           Write-Host "Extracting zip package directly to Program Files..."
-          # Drops the internal "AweSun" folder directly into Program Files (x86)
           Expand-Archive -Path "awesun.zip" -DestinationPath "C:\Program Files (x86)" -Force
 
       - name: Initialize Main AweSun Desktop App
         run: |
           $AweSunExe = "C:\Program Files (x86)\AweSun\AweSun.exe"
           
-          # Quick check to ensure the file exists before launching
           if (-not (Test-Path $AweSunExe)) {
               Write-Error "CRITICAL: AweSun.exe was not found at $AweSunExe."
-              Write-Host "Printing contents of extraction path for troubleshooting:"
-              Get-ChildItem -Path "C:\Program Files (x86)\AweSun" -Recurse -ErrorAction SilentlyContinue
               exit 1
           }
           
-          Write-Host "Launching connection dashboard framework..."
-          # Launching the main executable natively in headless silent mode
-          Start-Process $AweSunExe -ArgumentList "-s" -NoNewWindow
-          Start-Sleep -Seconds 15
+          Write-Host "Launching connection dashboard..."
+          # Running it normally without "-s" to ensure the main interface opens up fully for the snapshot
+          Start-Process $AweSunExe -NoNewWindow
+          Write-Host "Waiting 25 seconds for window graphics and ID to render..."
+          Start-Sleep -Seconds 25
+
+      - name: Capture Desktop Screenshot
+        run: |
+          Write-Host "Capturing live virtual display matrix..."
+          Add-Type -AssemblyName System.Windows.Forms
+          Add-Type -AssemblyName System.Drawing
           
-          Write-Host "===================================================="
-          Write-Host "         AWESUN ENGINE DEPLOYMENT COMPLETE          "
-          Write-Host "===================================================="
-          Write-Host " Application initialized successfully."
-          Write-Host " Check your phone or local PC app to watch it connect!"
-          Write-Host "===================================================="
+          $screen = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+          $bitmap = New-Object System.Drawing.Bitmap $screen.Width, $screen.Height
+          $graphic = [System.Drawing.Graphics]::FromImage($bitmap)
+          
+          $graphic.CopyFromScreen($screen.X, $screen.Y, 0, 0, $bitmap.Size)
+          $bitmap.Save("$pwd\awesun_display.png", [System.Drawing.Imaging.ImageFormat]::Png)
+          
+          $graphic.Dispose()
+          $bitmap.Dispose()
+          Write-Host "Screenshot saved locally to workspace."
+
+      - name: Push Screenshot to GoFile API and Output View Link
+        run: |
+          Write-Host "Requesting optimized active upload server from GoFile..."
+          try {
+              $ServerCheck = Invoke-RestMethod -Uri "https://api.gofile.io/getServer" -Method Get
+              $TargetServer = $ServerCheck.data.server
+              Write-Host "Assigned GoFile Landing Target: $TargetServer"
+              
+              Write-Host "Uploading screenshot payload..."
+              $UploadUri = "https://$TargetServer.gofile.io/uploadFile"
+              
+              # Execute multi-part form upload natively via PowerShell
+              $Form = @{
+                  file = Get-Item "$pwd\awesun_display.png"
+              }
+              $UploadResult = Invoke-RestMethod -Uri $UploadUri -Method Post -Form $Form
+              
+              $DownloadPage = $UploadResult.data.downloadPage
+              
+              Write-Host "`n===================================================="
+              Write-Host "        AWESUN SCREENSHOT IS READY                  "
+              Write-Host "===================================================="
+              Write-Host " CLICK THIS LINK TO SEE YOUR ID & PASSCODE:"
+              Write-Host " $DownloadPage"
+              Write-Host "===================================================="
+          }
+          catch {
+              Write-Error "GoFile API upload failed. Fallback to standard artifact compilation."
+          }
 
       - name: Keep Alive Loop
         run: Start-Sleep -Seconds 10000

@@ -1,4 +1,4 @@
-name: Cloud PC via Release-Hosted AweSun (With Native Old-Code Link)
+name: Cloud PC via Auto-Installing AweSun Deployment
 
 on:
   workflow_dispatch:
@@ -32,26 +32,49 @@ jobs:
           Invoke-WebRequest -Uri "https://net.geo.opera.com/opera_gx/stable/windows?utm_source=inf&utm_medium=gx" -OutFile "$env:TEMP\OperaGXSetup.exe"
           Start-Process -FilePath "$env:TEMP\OperaGXSetup.exe" -ArgumentList "--silent=1", "--allusers=1", "--launchbrowser=0" -Wait
 
-      - name: Fetch Large Archive from Releases and Extract
+      - name: Fetch Large Archive from Releases and Extract Installer
         run: |
-          Write-Host "Downloading application payload..."
+          Write-Host "Downloading application installer package..."
           Invoke-WebRequest -Uri "${{ env.RELEASE_URL }}" -OutFile "awesun.zip"
           
-          Write-Host "Extracting zip package directly to Program Files..."
-          Expand-Archive -Path "awesun.zip" -DestinationPath "C:\Program Files (x86)" -Force
+          Write-Host "Unpacking zip contents..."
+          Expand-Archive -Path "awesun.zip" -DestinationPath "$env:TEMP\awesun_installer" -Force
 
-      - name: Initialize Main AweSun Desktop App
+      - name: Run Silent Background Automated Installation
         run: |
-          $AweSunExe = "C:\Program Files (x86)\AweSun\AweSun.exe"
+          # Locate the installer executable inside the unpacked folder dynamically
+          $setupExe = Get-ChildItem -Path "$env:TEMP\awesun_installer" -Filter "*.exe" -Recurse | Select-Object -First 1
           
-          if (-not (Test-Path $AweSunExe)) {
-              Write-Error "CRITICAL: AweSun.exe was not found at $AweSunExe."
+          if (-not $setupExe) {
+              Write-Error "CRITICAL: No executable setup file found inside the uploaded zip archive."
               exit 1
           }
           
-          Write-Host "Launching connection dashboard..."
+          Write-Host "Executing silent deployment via installer: $($setupExe.FullName)"
+          # /S or /silent are standard deployment arguments to bypass the 'Install Now' popup window automatically
+          Start-Process -FilePath $setupExe.FullName -ArgumentList "/S", "/silent", "/verysilent", "/qn" -Wait -ErrorAction SilentlyContinue
+          
+          Write-Host "Allowing system installation matrix 20 seconds to populate..."
+          Start-Sleep -Seconds 20
+
+      - name: Initialize Main Pre-Installed AweSun Dashboard
+        run: |
+          # Define standard default program installation pathways
+          $path1 = "C:\Program Files (x86)\AweSun\AweSun.exe"
+          $path2 = "C:\Program Files\AweSun\AweSun.exe"
+          
+          if (Test-Path $path1) { $AweSunExe = $path1 }
+          elseif (Test-Path $path2) { $AweSunExe = $path2 }
+          else {
+              Write-Error "CRITICAL: AweSun did not install to standard paths. Printing Program Files directories for troubleshooting:"
+              Get-ChildItem -Path "C:\Program Files (x86)", "C:\Program Files" -Filter "*AweSun*" -ErrorAction SilentlyContinue
+              exit 1
+          }
+          
+          Write-Host "Found installed application at: $AweSunExe"
+          Write-Host "Launching connection framework interface..."
           Start-Process $AweSunExe -NoNewWindow
-          Write-Host "Waiting 25 seconds for window graphics and ID to render..."
+          Write-Host "Waiting 25 seconds for window rendering and credential mapping..."
           Start-Sleep -Seconds 25
 
       - name: Launch AweSun (foreground) + Screenshot to Gofile

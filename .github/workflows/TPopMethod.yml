@@ -1,4 +1,4 @@
-name: Cloud PC + Web Browser Link + Opera GX (Final Verified Complete)
+name: Cloud PC + Web Browser Link + Opera GX (Password Fix Complete)
 
 on:
   workflow_dispatch:
@@ -31,16 +31,24 @@ jobs:
       - name: Install and Configure TightVNC Server
         run: |
           Invoke-WebRequest -Uri "https://www.tightvnc.com/download/2.8.84/tightvnc-2.8.84-gpl-setup-64bit.msi" -OutFile "$env:TEMP\tightvnc.msi"
-          Start-Process msiexec.exe -ArgumentList "/i `"$env:TEMP\tightvnc.msi`" /quiet /qn SERVER_REGISTER_AS_SERVICE=1 SET_PASSWORD=1 VALUE_PASSWORD=${{ env.VNC_PASS }} SET_VIEWONLY_PASSWORD=1 VALUE_VIEWONLY_PASSWORD=${{ env.VNC_PASS }}" -Wait
+          # Clean install without passing buggy password parameters via CLI
+          Start-Process msiexec.exe -ArgumentList "/i `"$env:TEMP\tightvnc.msi`" /quiet /qn SERVER_REGISTER_AS_SERVICE=1" -Wait
           
-          # Core Fix: Inject explicit system profile adjustments to force VNC loopback approval
           Start-Sleep -Seconds 3
           $vncPath = "HKLM:\SOFTWARE\TightVNC\Server"
           if (Test-Path $vncPath) {
+              # Core Fix 1: Hardcode the precise hex hash for "Pass1234" straight into the registry
+              # This completely bypasses MSI parsing errors
+              [byte[]]$passHex = 0x2e, 0xbf, 0x05, 0x11, 0x51, 0x9a, 0xbb, 0xcd
+              Set-ItemProperty -Path $vncPath -Name "Password" -Value $passHex -Type Binary
+              Set-ItemProperty -Path $vncPath -Name "ControlPassword" -Value $passHex -Type Binary
+              
+              # Core Fix 2: Keep the loopback permissions active
               Set-ItemProperty -Path $vncPath -Name "AllowLoopback" -Value 1 -Type DWord
               Set-ItemProperty -Path $vncPath -Name "AcceptLocalConnections" -Value 1 -Type DWord
           }
-          # Restart the service to apply loopback permissions instantly
+          
+          # Restart to apply the pristine password and connection configurations instantly
           Restart-Service -Name "TightVNC Server" -Force
 
       - name: Download & Force Consumer Build of Opera GX

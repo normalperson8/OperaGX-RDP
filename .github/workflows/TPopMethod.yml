@@ -1,4 +1,4 @@
-name: Cloud PC + Web Browser Link + Opera GX (Auto-Login Fix)
+name: Cloud PC via Release-Hosted AweSun Deployment
 
 on:
   workflow_dispatch:
@@ -15,8 +15,8 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 190
     env:
-      VNC_PASS: Pass1234
-      RUNTIME_MINUTES: 180
+      # Integrated your direct release file download pathway cleanly
+      RELEASE_URL: "https://github.com/tusharpop553-afk/OperaGX-RDP/releases/download/v1.0.0/AweSun.zip"
 
     steps:
       - name: Wipe Unnecessary Pre-Installed GitHub Apps & Shortcuts
@@ -28,77 +28,55 @@ jobs:
       - name: Force Full HD Resolution
         run: Set-DisplayResolution -Width 1920 -Height 1080 -Force
 
-      - name: Purge Legacy Key Configs and Install TightVNC Server
-        run: |
-          # Completely purge older registry pathways to prevent background validation blocks
-          Remove-Item -Path "HKLM:\SOFTWARE\TightVNC" -Recurse -ErrorAction SilentlyContinue
-          
-          Invoke-WebRequest -Uri "https://www.tightvnc.com/download/2.8.84/tightvnc-2.8.84-gpl-setup-64bit.msi" -OutFile "$env:TEMP\tightvnc.msi"
-          Start-Process msiexec.exe -ArgumentList "/i `"$env:TEMP\tightvnc.msi`" /quiet /qn SERVER_REGISTER_AS_SERVICE=1" -Wait
-          
-          Start-Sleep -Seconds 8
-          
-          # Force stop the automatic service initialization state to write modifications cleanly
-          Stop-Service -Name "tvnserver" -ErrorAction SilentlyContinue
-          
-          # Initialize fresh base network registry variables
-          reg add "HKLM\SOFTWARE\TightVNC\Server" /v AuthRequired /t REG_DWORD /d 1 /f
-          reg add "HKLM\SOFTWARE\TightVNC\Server" /v AuthType /t REG_DWORD /d 1 /f
-          reg add "HKLM\SOFTWARE\TightVNC\Server" /v AllowLoopback /t REG_DWORD /d 1 /f
-          reg add "HKLM\SOFTWARE\TightVNC\Server" /v AcceptLocalConnections /t REG_DWORD /d 1 /f
-          
-          # Inject correct binary string values directly for the Pass1234 credential validation loop
-          reg add "HKLM\SOFTWARE\TightVNC\Server" /v Password /t REG_BINARY /d 2147667a55aa6b39 /f
-          reg add "HKLM\SOFTWARE\TightVNC\Server" /v ControlPassword /t REG_BINARY /d 2147667a55aa6b39 /f
-          
-          Start-Sleep -Seconds 2
-          Start-Service -Name "tvnserver"
-
       - name: Download & Force Consumer Build of Opera GX
         run: |
           Invoke-WebRequest -Uri "https://net.geo.opera.com/opera_gx/stable/windows?utm_source=inf&utm_medium=gx" -OutFile "$env:TEMP\OperaGXSetup.exe"
           Start-Process -FilePath "$env:TEMP\OperaGXSetup.exe" -ArgumentList "--silent=1", "--allusers=1", "--launchbrowser=0" -Wait
 
-      - name: Deploy Web Interface & Dynamic Gateway Engines
+      - name: Fetch Large Archive from Releases and Extract
         run: |
-          python -m pip install websockify --quiet --no-input --disable-pip-version-check --no-color --progress-bar off
-          npm install -g localtunnel --silent --no-fund --no-audit --non-interactive
+          Write-Host "Downloading large application payload from secure release tier..."
+          Invoke-WebRequest -Uri "${{ env.RELEASE_URL }}" -OutFile "awesun.zip"
           
-          New-Item -ItemType Directory -Path "C:\noVNC" -Force
-          Invoke-WebRequest -Uri "https://github.com/novnc/noVNC/archive/refs/tags/v1.5.0.zip" -OutFile "novnc.zip"
-          Expand-Archive -Path "novnc.zip" -DestinationPath "C:\noVNC" -Force
-          Copy-Item -Path "C:\noVNC\noVNC-1.5.0\*" -Destination "C:\noVNC" -Recurse -Force
-
-      - name: Start Services & Generate Auto-Login URLs
-        run: |
-          Write-Host "Launching Native Python Web Bridge..."
-          Start-Process python -ArgumentList "-m websockify 8080 localhost:5900 --web C:\noVNC"
+          Write-Host "Creating target system directories..."
+          New-Item -ItemType Directory -Path "C:\Program Files (x86)\AweSun" -Force
           
-          Write-Host "Verifying local backend initialization..."
-          $retries = 0
-          while (-not (Test-NetConnection -ComputerName 127.0.0.1 -Port 8080).TcpTestSucceeded -and $retries -lt 15) {
-              Start-Sleep -Seconds 2
-              $retries++
-          }
+          Write-Host "Extracting zip package archive..."
+          Expand-Archive -Path "awesun.zip" -DestinationPath "C:\Program Files (x86)\AweSun" -Force
           
-          Write-Host "Requesting isolated, non-clashing edge domain map..."
-          $LogFile = "$env:TEMP\localtunnel.log"
-          Start-Process cmd.exe -ArgumentList "/c lt --port 8080 > `"$LogFile`""
-          Start-Sleep -Seconds 7
-          
-          $RawLink = (Get-Content $LogFile -Raw) | Select-String -Pattern 'https://[a-zA-Z0-9-]+\.loca\.lt' | Select-Object -ExpandProperty Matches | Select-Object -ExpandProperty Value -First 1
-          
-          if ($RawLink) {
-              $FinalUrl = $RawLink + "/vnc.html?autoconnect=true&password=" + "${{ env.VNC_PASS }}"
-              Write-Host "===================================================="
-              Write-Host "     WEB-BROWSER CLOUD PC IS READY TO CONNECT      "
-              Write-Host "===================================================="
-              Write-Host " CLICK LINK: $FinalUrl"
-              Write-Host " SECURITY  : Credentials embedded. Automatic bypass active."
-              Write-Host "===================================================="
-          } else {
-              Write-Error "CRITICAL: Dynamic gateway assignment timed out."
+          # Automatically flattens the system structure if the zip contains a root folder name matching 'AweSun' or 'awesun'
+          if (Test-Path "C:\Program Files (x86)\AweSun\AweSun") {
+              Move-Item "C:\Program Files (x86)\AweSun\AweSun\*" "C:\Program Files (x86)\AweSun\" -Force
+          } elseif (Test-Path "C:\Program Files (x86)\AweSun\awesun") {
+              Move-Item "C:\Program Files (x86)\AweSun\awesun\*" "C:\Program Files (x86)\AweSun\" -Force
           }
 
-      - name: Keep alive
+      - name: Initialize Main Background Execution Engines
+        run: |
+          $AweSunExe = "C:\Program Files (x86)\AweSun\AweSun.exe"
+          $ServiceExe = "C:\Program Files (x86)\AweSun\AweSunService.exe"
+          
+          if (-not (Test-Path $AweSunExe)) {
+              Write-Error "CRITICAL: AweSun.exe not found at target location. Check your zip file configuration."
+              exit 1
+          }
+          
+          Write-Host "Registering background engine dependencies..."
+          Start-Process $ServiceExe -ArgumentList "-install" -Wait -ErrorAction SilentlyContinue
+          Start-Sleep -Seconds 5
+          
+          Write-Host "Launching main connection framework..."
+          # Start the core engine headless with silent execution parameters
+          Start-Process $AweSunExe -ArgumentList "-s" -NoNewWindow
+          Start-Sleep -Seconds 10
+          
+          Write-Host "===================================================="
+          Write-Host "         AWESUN ENGINE DEPLOYMENT COMPLETE          "
+          Write-Host "===================================================="
+          Write-Host " Large file download and deployment successful."
+          Write-Host " Open your local computer or phone's AweSun client"
+          Write-Host " to verify if this cloud runner pops up online."
+          Write-Host "===================================================="
+
+      - name: Keep Alive Loop
         run: Start-Sleep -Seconds 10000

@@ -58,3 +58,95 @@ jobs:
           $userDesktop = "$env:USERPROFILE\Desktop"
           
           if (Test-Path "$userDesktop\Opera GX.lnk") {
+              Move-Item -Path "$userDesktop\Opera GX.lnk" -Destination $publicDesktop -Force -ErrorAction SilentlyContinue
+          }
+
+          Write-Host "Configuring explicit launcher shortcut with forced promo link and sidebar flags..."
+          $operaExe = "$env:ProgramFiles\Opera GX\opera.exe"
+          if (-not (Test-Path $operaExe)) { $operaExe = "$env:ProgramFiles (x86)\Opera GX\opera.exe" }
+          
+          $WshShell = New-Object -ComObject WScript.Shell
+          $Shortcut = $WshShell.CreateShortcut("$publicDesktop\Opera GX Browser.lnk")
+          $Shortcut.TargetPath = $operaExe
+          $Shortcut.Arguments = "https://www.opera.com/gx/forsaken --no-first-run --enable-features=GXRewards,GXRewardsSidebarItem --with-feature:gx-rewards=1"
+          $Shortcut.Save()
+
+          Start-Process -FilePath "$publicDesktop\Opera GX Browser.lnk"
+
+      - name: Parse Runtime Requirements
+        run: |
+          function IntOr($v,$d){ if("$v" -match '^\d+$'){ [int]$v } else { [int]$d } }
+          $runtime = IntOr("${{ inputs.runtime_minutes }}",355)
+          if ($runtime -gt 360 -or $runtime -lt 1) { $runtime = 355 }
+          "RUNTIME_MINUTES=$runtime" | Out-File -Append $env:GITHUB_ENV
+
+      - name: Purge Legacy Machine Registrations
+        run: |
+          try {
+            $auth = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes("${{ inputs.ts_api_key }}:"))
+            $tn = [uri]::EscapeDataString("${{ inputs.ts_tailnet }}")
+            $list = Invoke-RestMethod -Uri "https://api.tailscale.com/api/v2/tailnet/$tn/devices" -Headers @{ Authorization = "Basic $auth" }
+            foreach($d in $list.devices){
+              if ($d.hostname -match '^(bullet|pc)[0-9]*$'){
+                Invoke-RestMethod -Method Delete -Uri "https://api.tailscale.com/api/v2/device/$($d.id)" -Headers @{ Authorization = "Basic $auth" } -ErrorAction SilentlyContinue
+              }
+            }
+          } catch {}
+
+      - name: Install & Authenticate Tailscale Network
+        run: |
+          $ts = "$env:ProgramFiles\Tailscale\tailscale.exe"
+          if (-not (Test-Path $ts)) {
+            $url = "https://pkgs.tailscale.com/stable/tailscale-setup-1.82.0-amd64.msi"
+            $dst = "$env:TEMP\tailscale.msi"
+            Invoke-WebRequest -Uri $url -OutFile $dst
+            Start-Process msiexec.exe -ArgumentList "/i","`"$dst`"","/quiet","/norestart" -Wait
+            Remove-Item $dst -Force
+          }
+          & $ts logout | Out-Null
+          & $ts up --authkey "${{ inputs.ts_authkey }}" --hostname "pc" --accept-dns=true --accept-routes=true
+          $ip4 = & $ts ip -4 | Select-Object -First 1
+          Write-Host "Tailscale Dedicated Node IP: $ip4"
+
+      - name: Hijack Admin Session & Rename runneradmin to user
+        run: |
+          Rename-Computer -NewName "pc" -Force -ErrorAction SilentlyContinue
+          
+          # Rename the active runneradmin account directly to user
+          Write-Host "Renaming default admin profile context to target identity..."
+          if (Get-LocalUser -Name "runneradmin" -ErrorAction SilentlyContinue) {
+              Rename-LocalUser -Name "runneradmin" -NewName "user"
+          }
+          
+          # Set the password on the newly renamed user profile
+          $sec = ConvertTo-SecureString $env:RDP_PASS -AsPlainText -Force
+          Set-LocalUser -Name "user" -Password $sec -AccountNeverExpires -UserMayChangePassword $true
+          
+          # Ensure Remote Desktop access is globally unblocked
+          Set-ItemProperty "HKLM:\System\CurrentControlSet\Control\Terminal Server" -Name fDenyTSConnections -Value 0
+          Enable-NetFirewallRule -DisplayGroup "Remote Desktop" | Out-Null
+
+      - name: Structural Window Minimization
+        run: |
+          $shell = New-Object -ComObject Shell.Application
+          $shell.MinimizeAll()
+
+      - name: Connection Keep-Alive Loop
+        run: |
+          $mins = [int]$env:RUNTIME_MINUTES
+          if (-not $mins) { $mins = 355 }
+          
+          $end = (Get-Date).AddMinutes($mins)
+          while ((Get-Date) -lt $end) {
+            Write-Host ("Tailscale/RDP Active Engine | Heartbeat " + (Get-Date).ToString("HH:mm:ss") + " ends at " + $end.ToString("HH:mm:ss"))
+            Start-Sleep -Seconds 60
+          }
+
+      - name: Disconnect Tailscale Node Safely
+        if: always()
+        run: |
+          $ts = "$env:ProgramFiles\Tailscale\tailscale.exe"
+          if (Test-Path $ts) {
+              Write-Host "Disconnecting machine and logging out of tailnet..."
+              & $ts logout | Out-Null
+          }

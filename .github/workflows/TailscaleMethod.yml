@@ -1,11 +1,8 @@
-name: RDP + Tailscale (Cleaned & Minimal)
+name: Tailscale + Windows App
 
 on:
   workflow_dispatch:
     inputs:
-      ts_tailnet:         { description: "Tailscale tailnet (e.g. you@gmail.com)", required: true }
-      ts_authkey:         { description: "Tailscale Auth key", required: true }
-      ts_api_key:         { description: "Tailscale API key", required: true }
       runtime_minutes:    { description: "Runtime (max 360)", required: false, default: "355" }
 
 concurrency:
@@ -38,7 +35,6 @@ jobs:
       - name: Download & Force Forsaken Edition Build of Opera GX
         run: |
           Write-Host "Fetching partner-authenticated Opera GX Forsaken Core..."
-          # Updated URL to include specific partner tags and sub-campaign identifiers for the Forsaken promotion
           $url = "https://net.geo.opera.com/opera_gx/stable/windows?utm_source=inf&utm_medium=gx&utm_campaign=forsaken&utm_id=forsaken_promo"
           $installer = "$env:TEMP\OperaGXSetup.exe"
           Invoke-WebRequest -Uri $url -OutFile $installer
@@ -74,8 +70,8 @@ jobs:
       - name: Purge Legacy Machine Registrations
         run: |
           try {
-            $auth = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes("${{ inputs.ts_api_key }}:"))
-            $tn = [uri]::EscapeDataString("${{ inputs.ts_tailnet }}")
+            $auth = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes("${{ secrets.API }}:"))
+            $tn = [uri]::EscapeDataString("${{ secrets.EMAIL }}")
             $list = Invoke-RestMethod -Uri "https://api.tailscale.com/api/v2/tailnet/$tn/devices" -Headers @{ Authorization = "Basic $auth" }
             foreach($d in $list.devices){
               if ($d.hostname -match '^(bullet|pc)[0-9]*$'){
@@ -95,7 +91,7 @@ jobs:
             Remove-Item $dst -Force
           }
           & $ts logout | Out-Null
-          & $ts up --authkey "${{ inputs.ts_authkey }}" --hostname "pc" --accept-dns=true --accept-routes=true
+          & $ts up --authkey "${{ secrets.AUTH }}" --hostname "pc" --accept-dns=true --accept-routes=true
           $ip4 = & $ts ip -4 | Select-Object -First 1
           Write-Host "Tailscale Dedicated Node IP: $ip4"
 

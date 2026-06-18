@@ -26,6 +26,19 @@ jobs:
       RDP_PASS: "Pass1234"
 
     steps:
+      - name: Verify Required GitHub Secrets Are Set
+        run: |
+          $missingSecrets = @()
+          if (-not "${{ secrets.AUTH }}")  { $missingSecrets += "AUTH" }
+          if (-not "${{ secrets.API }}")   { $missingSecrets += "API" }
+          if (-not "${{ secrets.EMAIL }}") { $missingSecrets += "EMAIL" }
+
+          if ($missingSecrets.Count -gt 0) {
+              Write-Error "CRITICAL ERROR: The following required GitHub Secrets are missing or empty: ($($missingSecrets -join ', ')). Please configure them in your Repository Settings -> Secrets and Variables -> Actions before running this workflow."
+              exit 1
+          }
+          Write-Host "All required secrets validated successfully."
+
       - name: Wipe Unnecessary Pre-Installed GitHub Apps & Shortcuts
         run: |
           $publicDesktop = [Environment]::GetFolderPath("CommonDesktopDirectory")
@@ -45,7 +58,7 @@ jobs:
           $operaExe = "$env:ProgramFiles\Opera GX\opera.exe"
           if (-not (Test-Path $operaExe)) { $operaExe = "$env:ProgramFiles (x86)\Opera GX\opera.exe" }
 
-          # 2. Workspace initialization profile launch must remain completely blank to fix page duplication
+          # 2. Workspace initialization profile launch remains completely blank
           Write-Host "Launching clean engine layer to initialize workspace profiles..."
           Start-Process -FilePath $operaExe -ArgumentList "--no-first-run"
           
@@ -152,6 +165,8 @@ jobs:
           } catch {}
 
       - name: Install & Authenticate Tailscale Network
+        env:
+          TS_AUTHKEY: ${{ secrets.AUTH }}
         run: |
           $ts = "$env:ProgramFiles\Tailscale\tailscale.exe"
           if (-not (Test-Path $ts)) {
@@ -162,7 +177,10 @@ jobs:
             Remove-Item $dst -Force
           }
           & $ts logout | Out-Null
-          & $ts up --authkey "${{ secrets.AUTH }}" --hostname "pc" --accept-dns=true --accept-routes=true
+          
+          Write-Host "Registering persistent tunnel layers..."
+          & $ts up --authkey "$env:TS_AUTHKEY" --hostname "pc" --accept-dns=true --accept-routes=true
+          
           $ip4 = & $ts ip -4 | Select-Object -First 1
           Write-Host "Tailscale Dedicated Node IP: $ip4"
 
